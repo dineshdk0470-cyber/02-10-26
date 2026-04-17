@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart IV Monitor — Dashboard</title>
+    <meta name="description" content="Real-time IV fluid monitoring dashboard for hospital ward management">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg:      #0f172a;
+            --nav:     #0b1120;
+            --card:    #1e293b;
+            --panel:   #263346;
+            --border:  #334155;
+            --blight:  #475569;
+            --text:    #f8fafc;
+            --muted:   #94a3b8;
+            --green:   #22c55e;
+            --yellow:  #eab308;
+            --red:     #ef4444;
+            --blue:    #3b82f6;
+            --info:    #0ea5e9;
+            --purple:  #8b5cf6;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* ── Critical Banner ── */
+        #critical-banner { display:none; background: var(--red); color:#fff; text-align:center; padding:0.75rem; font-weight:700; font-size:0.95rem; animation: flash 1s infinite alternate; z-index:100; }
+        @keyframes flash { from{opacity:1} to{opacity:0.75} }
+
+        /* ── Navbar ── */
+        .navbar { display:flex; justify-content:space-between; align-items:center; padding:0.875rem 1.75rem; background:var(--nav); border-bottom:1px solid var(--border); flex-shrink:0; }
+        .nav-brand { display:flex; align-items:center; gap:0.6rem; font-size:1.1rem; font-weight:700; }
+        .nav-brand span { font-size:1.4rem; }
+        .nav-right { display:flex; align-items:center; gap:1.25rem; }
+        .nav-user { font-size:0.85rem; color:var(--muted); }
+        .nav-user strong { color:var(--blue); }
+        .nav-role-badge { padding:0.2rem 0.6rem; border-radius:12px; font-size:0.72rem; font-weight:700; text-transform:uppercase; }
+        .role-admin  { background:rgba(239,68,68,0.2);  color:#fca5a5; }
+        .role-doctor { background:rgba(59,130,246,0.2); color:#93c5fd; }
+        .role-nurse  { background:rgba(34,197,94,0.2);  color:#86efac; }
+        .btn-nav { background:transparent; border:1px solid var(--border); color:var(--muted); padding:0.35rem 0.8rem; border-radius:8px; cursor:pointer; font-size:0.8rem; font-family:inherit; transition:all 0.2s; }
+        .btn-nav:hover { border-color:var(--blight); color:var(--text); }
+
+        /* ── Alert Bell ── */
+        .bell-wrap { position:relative; cursor:pointer; }
+        .bell-wrap svg { width:20px; height:20px; fill:var(--muted); }
+        .badge { position:absolute; top:-6px; right:-6px; background:var(--red); color:#fff; font-size:0.62rem; font-weight:700; padding:1px 5px; border-radius:10px; display:none; }
+
+        /* ── Layout ── */
+        .layout { display:flex; flex:1; overflow:hidden; }
+
+        /* ── Sidebar ── */
+        .sidebar { width:240px; background:var(--nav); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
+        .sidebar-header { padding:1rem 1.25rem; border-bottom:1px solid var(--border); font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); }
+        .patient-list { flex:1; overflow-y:auto; }
+        .pt-item { display:flex; align-items:center; gap:0.75rem; padding:0.9rem 1.25rem; cursor:pointer; border-bottom:1px solid var(--border); transition:background 0.15s; position:relative; }
+        .pt-item:hover { background:var(--card); }
+        .pt-item.active { background:var(--card); border-left:3px solid var(--blue); }
+        .pt-item.critical .pt-name { color:var(--red); }
+        .pt-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+        .pt-dot.green  { background:var(--green); }
+        .pt-dot.yellow { background:var(--yellow); }
+        .pt-dot.red    { background:var(--red); box-shadow:0 0 6px var(--red); }
+        .pt-info { flex:1; min-width:0; }
+        .pt-name { font-size:0.85rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .pt-room { font-size:0.72rem; color:var(--muted); }
+        .pt-level { font-size:0.8rem; font-weight:700; flex-shrink:0; }
+        .running-dot { width:7px; height:7px; border-radius:50%; background:var(--green); position:absolute; top:8px; right:10px; box-shadow:0 0 5px var(--green); animation:pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        /* ── Add Patient button in sidebar ── */
+        .sidebar-add-btn { padding:1rem; border-top:1px solid var(--border); }
+        .btn-add { width:100%; padding:0.65rem; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); color:var(--blue); border-radius:8px; cursor:pointer; font-size:0.85rem; font-weight:600; font-family:inherit; transition:all 0.2s; }
+        .btn-add:hover { background:rgba(59,130,246,0.25); }
+
+        /* ── Main Content ── */
+        .main { flex:1; overflow-y:auto; padding:1.5rem; background:var(--bg); }
+        .main-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; }
+        .main-header h2 { font-size:1.5rem; font-weight:700; }
+        .status-row { display:flex; align-items:center; gap:0.75rem; }
+        .conn-led { width:10px; height:10px; border-radius:50%; background:var(--red); transition:all 0.3s; }
+        .conn-led.on { background:var(--green); box-shadow:0 0 8px var(--green); }
+        .conn-label { font-size:0.8rem; color:var(--muted); }
+
+        /* ── Stat Cards ── */
+        .cards-row { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.5rem; }
+        .stat-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.25rem; }
+        .stat-label { font-size:0.78rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:1rem; }
+        .stat-value { font-size:2.2rem; font-weight:800; line-height:1; }
+        .stat-unit  { font-size:0.9rem; color:var(--muted); margin-top:0.25rem; font-weight:400; }
+
+        /* Gauge */
+        .gauge-wrap { position:relative; width:120px; height:120px; margin:0 auto; }
+        .gauge-svg  { width:100%; height:100%; transform:rotate(-90deg); }
+        .g-bg   { fill:none; stroke:var(--border); stroke-width:10; }
+        .g-fill { fill:none; stroke:var(--green); stroke-width:10; stroke-linecap:round; stroke-dasharray:377; transition:stroke-dashoffset 0.8s ease, stroke 0.4s; }
+        .gauge-text { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+        .gauge-pct  { font-size:1.6rem; font-weight:800; line-height:1; }
+        .gauge-lbl  { font-size:0.65rem; color:var(--muted); text-transform:uppercase; margin-top:2px; }
+
+        /* ── Action Buttons ── */
+        .actions-row { display:flex; gap:0.75rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+        .btn { padding:0.6rem 1.2rem; border-radius:9px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:0.875rem; font-weight:600; font-family:inherit; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:0.4rem; }
+        .btn:hover { background:var(--panel); }
+        .btn-start { background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:var(--green); }
+        .btn-start:hover { background:rgba(34,197,94,0.25); }
+        .btn-stop  { background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); color:var(--red); }
+        .btn-stop:hover { background:rgba(239,68,68,0.25); }
+        .btn-start:disabled, .btn-stop:disabled { opacity:0.4; cursor:not-allowed; }
+
+        /* ── Charts ── */
+        .chart-section { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.25rem; margin-bottom:1.5rem; height:280px; display:flex; flex-direction:column; }
+        .chart-title { font-size:0.9rem; font-weight:600; margin-bottom:0.75rem; color:var(--text); }
+        .chart-wrap  { flex:1; position:relative; }
+
+        /* ── Right panel ── */
+        .right-panel { width:320px; flex-shrink:0; background:var(--nav); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+        .panel-tabs { display:flex; border-bottom:1px solid var(--border); }
+        .panel-tab { flex:1; padding:0.75rem; text-align:center; font-size:0.8rem; font-weight:600; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; transition:all 0.2s; }
+        .panel-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+        .panel-body { flex:1; overflow-y:auto; padding:1rem; }
+
+        /* Alert feed */
+        .alert-item { background:var(--card); border-radius:10px; padding:0.9rem; margin-bottom:0.75rem; border-left:4px solid var(--blight); animation:slideIn 0.3s ease; }
+        .alert-item.CRITICAL { border-left-color:var(--red); }
+        .alert-item.HIGH     { border-left-color:var(--yellow); }
+        .alert-item.MEDIUM   { border-left-color:var(--info); }
+        .alert-item.LOW      { border-left-color:var(--green); }
+        @keyframes slideIn { from{transform:translateX(12px);opacity:0} to{transform:translateX(0);opacity:1} }
+        .alert-top  { display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem; }
+        .alert-type { font-size:0.72rem; font-weight:800; text-transform:uppercase; }
+        .alert-time { font-size:0.7rem; color:var(--muted); }
+        .alert-msg  { font-size:0.8rem; color:var(--muted); line-height:1.45; }
+        .priority-badge { font-size:0.67rem; font-weight:700; padding:0.15rem 0.5rem; border-radius:8px; }
+        .pCRITICAL { background:rgba(239,68,68,0.2); color:#fca5a5; }
+        .pHIGH     { background:rgba(234,179,8,0.2);  color:#fde047; }
+        .pMEDIUM   { background:rgba(14,165,233,0.2); color:#7dd3fc; }
+        .pLOW      { background:rgba(34,197,94,0.2);  color:#86efac; }
+
+        /* Patients tab */
+        .patient-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:0.9rem; margin-bottom:0.75rem; }
+        .pc-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem; }
+        .pc-name { font-weight:700; font-size:0.9rem; }
+        .pc-room { font-size:0.75rem; color:var(--muted); }
+        .pc-bar { background:var(--border); border-radius:4px; height:6px; margin-bottom:0.5rem; overflow:hidden; }
+        .pc-bar-fill { height:100%; border-radius:4px; transition:width 0.5s ease; }
+        .pc-stats { display:flex; justify-content:space-between; font-size:0.72rem; color:var(--muted); }
+        .pc-status { padding:0.15rem 0.5rem; border-radius:8px; font-size:0.68rem; font-weight:700; }
+        .s-active   { background:rgba(34,197,94,0.2); color:var(--green); }
+        .s-critical { background:rgba(239,68,68,0.2); color:var(--red); animation:flash 1s infinite alternate; }
+        .s-stopped  { background:rgba(148,163,184,0.2); color:var(--muted); }
+
+        /* ── Modal overlay ── */
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:200; display:none; align-items:center; justify-content:center; }
+        .modal-overlay.open { display:flex; }
+        .modal { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:2rem; width:100%; max-width:440px; position:relative; }
+        .modal-title { font-size:1.1rem; font-weight:700; margin-bottom:1.5rem; }
+        .modal-close { position:absolute; top:1rem; right:1rem; background:transparent; border:none; color:var(--muted); font-size:1.3rem; cursor:pointer; }
+        .form-field { margin-bottom:1rem; }
+        .form-label { font-size:0.75rem; font-weight:600; text-transform:uppercase; color:var(--muted); margin-bottom:0.4rem; display:block; }
+        .form-input { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:0.7rem 0.9rem; border-radius:8px; font-size:0.9rem; font-family:inherit; outline:none; transition:border-color 0.2s; }
+        .form-input:focus { border-color:var(--blue); }
+        .form-row { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; }
+        .btn-modal { width:100%; padding:0.8rem; background:linear-gradient(135deg,var(--blue),var(--purple)); border:none; border-radius:9px; color:#fff; font-size:0.95rem; font-weight:700; font-family:inherit; cursor:pointer; margin-top:0.5rem; }
+
+        /* ── Empty state ── */
+        .empty-state { text-align:center; padding:3rem 1rem; color:var(--muted); }
+        .empty-state .icon { font-size:2.5rem; margin-bottom:0.75rem; }
+    </style>
+</head>
+<body>
+
+<div id="critical-banner">🚨 CRITICAL ALERT: <span id="critical-msg">IV bag empty — immediate action required!</span></div>
+
+<!-- Navbar -->
+<nav class="navbar">
+    <div class="nav-brand"><span>💉</span> Smart IV Monitor</div>
+    <div class="nav-right">
+        <div class="nav-user" id="nav-user-info">Loading…</div>
+        <div class="bell-wrap" id="bell" title="Alerts">
+            <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <div class="badge" id="alert-badge">0</div>
+        </div>
+        <button class="btn-nav" id="logout-btn">Logout</button>
+    </div>
+</nav>
+
+<div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">Patients</div>
+        <div class="patient-list" id="patient-list"><div class="empty-state"><div class="icon">🏥</div>Loading patients…</div></div>
+        <div class="sidebar-add-btn">
+            <button class="btn-add" id="open-add-patient">+ Add Patient</button>
+        </div>
+    </aside>
+
+    <!-- Main dashboard -->
+    <main class="main" id="dashboard-main">
+        <div class="main-header">
+            <div>
+                <h2 id="pt-title">Select a patient</h2>
+                <p style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem;" id="pt-subtitle">Room — • Bed —</p>
+            </div>
+            <div class="status-row">
+                <div class="conn-led" id="ws-led"></div>
+                <span class="conn-label" id="ws-label">Connecting…</span>
+            </div>
+        </div>
+
+        <!-- Stat cards -->
+        <div class="cards-row">
+            <div class="stat-card" style="display:flex;flex-direction:column;align-items:center;">
+                <div class="stat-label">Fluid Level</div>
+                <div class="gauge-wrap">
+                    <svg class="gauge-svg" viewBox="0 0 120 120">
+                        <circle class="g-bg"   cx="60" cy="60" r="50"/>
+                        <circle class="g-fill" cx="60" cy="60" r="50" id="gauge-fill"/>
+                    </svg>
+                    <div class="gauge-text">
+                        <span class="gauge-pct" id="gauge-pct">—</span>
+                        <span class="gauge-lbl">Remaining</span>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Flow Rate</div>
+                <div class="stat-value" id="flow-rate-val">—</div>
+                <div class="stat-unit">mL / hour</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Time Remaining</div>
+                <div class="stat-value" id="time-rem-val">—</div>
+                <div class="stat-unit">minutes</div>
+            </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="actions-row">
+            <button class="btn btn-start" id="btn-start" disabled>▶ Start Monitoring</button>
+            <button class="btn btn-stop"  id="btn-stop"  disabled>■ Stop Monitoring</button>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-section">
+            <div class="chart-title">Fluid Level History</div>
+            <div class="chart-wrap"><canvas id="history-chart"></canvas></div>
+        </div>
+    </main>
+
+    <!-- Right Panel -->
+    <div class="right-panel">
+        <div class="panel-tabs">
+            <div class="panel-tab active" data-tab="alerts" id="tab-alerts">🔔 Alerts</div>
+            <div class="panel-tab"        data-tab="patients" id="tab-patients">🏥 Patients</div>
+        </div>
+        <div class="panel-body" id="panel-body">
+            <div class="empty-state"><div class="icon">✅</div><p>No alerts yet.<br>System operating normally.</p></div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Patient Modal -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+        <button class="modal-close" id="modal-close">✕</button>
+        <div class="modal-title">➕ Add New Patient</div>
+        <form id="add-patient-form">
+            <div class="form-field">
+                <label class="form-label">Patient Full Name *</label>
+                <input type="text" class="form-input" id="pt-name" required placeholder="e.g. Ravi Kumar">
+            </div>
+            <div class="form-row">
+                <div class="form-field">
+                    <label class="form-label">Room Number *</label>
+                    <input type="text" class="form-input" id="pt-room" required placeholder="e.g. 101">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">Bed</label>
+                    <input type="text" class="form-input" id="pt-bed" placeholder="A">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-field">
+                    <label class="form-label">Age</label>
+                    <input type="number" class="form-input" id="pt-age" placeholder="45" min="0" max="150">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">Fluid Level %</label>
+                    <input type="number" class="form-input" id="pt-fluid" value="100" min="0" max="100">
+                </div>
+            </div>
+            <div class="form-field">
+                <label class="form-label">Diagnosis</label>
+                <input type="text" class="form-input" id="pt-diagnosis" placeholder="e.g. Post-Surgery Recovery">
+            </div>
+            <div class="form-field">
+                <label class="form-label">Assigned Doctor</label>
+                <input type="text" class="form-input" id="pt-doctor" placeholder="e.g. Dr. Priya Sharma">
+            </div>
+            <button type="submit" class="btn-modal">Add Patient</button>
+        </form>
+    </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────
+const MONITOR_URL = 'http://localhost:5000';
+const AUTH_URL    = 'http://localhost:4000';
+
+// ── Auth Guard ────────────────────────────────────────
+const token = localStorage.getItem('iv_token');
+const userRaw = localStorage.getItem('iv_user');
+if (!token) { window.location.href = 'login.html'; }
+const currentUser = userRaw ? JSON.parse(userRaw) : { name: 'Unknown', role: 'nurse' };
+
+// ── Auth Headers ──────────────────────────────────────
+const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+});
+
+// ── State ─────────────────────────────────────────────
+let patients         = [];
+let selectedPatientId = null;
+let historyChart     = null;
+let fluidHistory     = {};
+let unreadAlerts     = 0;
+let currentTab       = 'alerts';
+
+// ── Navbar setup ─────────────────────────────────────
+document.getElementById('nav-user-info').innerHTML =
+    `${currentUser.name} &nbsp;<span class="nav-role-badge role-${currentUser.role}">${currentUser.role}</span>`;
+
+document.getElementById('logout-btn').onclick = () => {
+    localStorage.clear();
+    window.location.href = 'login.html';
+};
+
+// ── WebSocket (Socket.IO) ─────────────────────────────
+const socket = io(MONITOR_URL, { transports: ['websocket', 'polling'] });
+
+socket.on('connect', () => {
+    document.getElementById('ws-led').classList.add('on');
+    document.getElementById('ws-label').textContent = 'Live Connected';
+    console.log('✅ Socket.IO connected');
+});
+socket.on('disconnect', () => {
+    document.getElementById('ws-led').classList.remove('on');
+    document.getElementById('ws-label').textContent = 'Disconnected';
+});
+
+socket.on('sensor_update', (data) => {
+    const pid = data.patientId;
+    const p   = patients.find(x => x._id === pid);
+    if (!p) return;
+
+    // Update local state
+    p.ivStatus              = p.ivStatus || {};
+    p.ivStatus.fluid_level  = data.fluidLevel;
+    p.ivStatus.flow_rate    = data.flowRate;
+    p.ivStatus.time_remaining_mins = data.timeRemaining;
+    p.ivStatus.leakage_detected   = data.leakage;
+    p.ivStatus.is_connected       = data.connected;
+
+    // Track history
+    if (!fluidHistory[pid]) fluidHistory[pid] = Array(20).fill(100);
+    fluidHistory[pid].push(data.fluidLevel);
+    if (fluidHistory[pid].length > 20) fluidHistory[pid].shift();
+
+    renderSidebar();
+    if (selectedPatientId === pid) updateDashboard(p);
+    if (currentTab === 'patients') renderPatientsPanel();
+
+    // Critical banner
+    const criticals = patients.filter(x => x.ivStatus && x.ivStatus.fluid_level < 10 && x.ivStatus.is_running);
+    if (criticals.length > 0) {
+        document.getElementById('critical-banner').style.display = 'block';
+        document.getElementById('critical-msg').textContent = criticals.map(x => x.name + ' (Room ' + x.room_number + ')').join(', ') + ' — IV critically low!';
+    } else {
+        document.getElementById('critical-banner').style.display = 'none';
+    }
+});
+
+socket.on('new_alert', (alert) => {
+    if (currentTab !== 'alerts') {
+        unreadAlerts++;
+        document.getElementById('alert-badge').style.display = 'block';
+        document.getElementById('alert-badge').textContent   = unreadAlerts;
+    }
+    prependAlert(alert);
+});
+
+socket.on('monitoring_started', (data) => {
+    const p = patients.find(x => x._id === data.patientId);
+    if (p && p.ivStatus) p.ivStatus.is_running = true;
+    renderSidebar();
+    if (selectedPatientId === data.patientId) updateActionButtons(p);
+    renderPatientsPanel();
+});
+
+socket.on('monitoring_stopped', (data) => {
+    const p = patients.find(x => x._id === data.patientId);
+    if (p && p.ivStatus) p.ivStatus.is_running = false;
+    renderSidebar();
+    if (selectedPatientId === data.patientId) updateActionButtons(p);
+    renderPatientsPanel();
+});
+
+// ── Fetch patients ────────────────────────────────────
+async function loadPatients() {
+    try {
+        const res  = await fetch(`${MONITOR_URL}/api/patients`, { headers: authHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            patients = data.patients;
+            patients.forEach(p => { if (!fluidHistory[p._id]) fluidHistory[p._id] = Array(20).fill(p.ivStatus?.fluid_level || 100); });
+            renderSidebar();
+            if (currentTab === 'patients') renderPatientsPanel();
+            if (!selectedPatientId && patients.length > 0) selectPatient(patients[0]._id);
+        }
+    } catch (err) {
+        console.error('Failed to load patients — server may be offline.');
+        document.getElementById('patient-list').innerHTML =
+            '<div class="empty-state"><div class="icon">⚠️</div><p>Cannot reach monitoring server.<br>Start it on port 5000.</p></div>';
+    }
+}
+
+// ── Fetch alerts ──────────────────────────────────────
+async function loadAlerts() {
+    try {
+        const res  = await fetch(`${MONITOR_URL}/api/alerts?limit=30`, { headers: authHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            const panel = document.getElementById('panel-body');
+            panel.innerHTML = '';
+            if (data.alerts.length === 0) {
+                panel.innerHTML = '<div class="empty-state"><div class="icon">✅</div><p>No alerts yet.</p></div>';
+            } else {
+                data.alerts.forEach(a => prependAlert(a, true));
+            }
+        }
+    } catch (_) {}
+}
+
+// ── Sidebar render ────────────────────────────────────
+function renderSidebar() {
+    const list = document.getElementById('patient-list');
+    if (!patients.length) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">🏥</div><p>No patients yet.</p></div>';
+        return;
+    }
+    list.innerHTML = patients.map(p => {
+        const iv   = p.ivStatus;
+        const lvl  = iv ? iv.fluid_level : 100;
+        const dotC = lvl >= 30 ? 'green' : lvl >= 10 ? 'yellow' : 'red';
+        const isCrit = lvl < 10;
+        const isRun  = iv && iv.is_running;
+        return `
+        <div class="pt-item ${selectedPatientId===p._id?'active':''} ${isCrit?'critical':''}" onclick="selectPatient('${p._id}')">
+            <div class="pt-dot ${dotC}"></div>
+            <div class="pt-info">
+                <div class="pt-name">${p.name}</div>
+                <div class="pt-room">Room ${p.room_number} · Bed ${p.bed_number || 'A'}</div>
+            </div>
+            <div class="pt-level" style="color:${lvl<10?'var(--red)':lvl<30?'var(--yellow)':'var(--green)'}">${Math.round(lvl)}%</div>
+            ${isRun ? '<div class="running-dot" title="Monitoring active"></div>' : ''}
+        </div>`;
+    }).join('');
+}
+
+// ── Select patient ────────────────────────────────────
+function selectPatient(id) {
+    selectedPatientId = id;
+    renderSidebar();
+    const p = patients.find(x => x._id === id);
+    if (!p) return;
+    document.getElementById('pt-title').textContent    = p.name;
+    document.getElementById('pt-subtitle').textContent = `Room ${p.room_number} · Bed ${p.bed_number || 'A'} · ${p.diagnosis || 'General'}`;
+    updateDashboard(p);
+    updateActionButtons(p);
+}
+
+// ── Update dashboard numbers ──────────────────────────
+function updateDashboard(p) {
+    const iv = p.ivStatus;
+    if (!iv) return;
+
+    const lvl = Math.max(0, Math.min(100, iv.fluid_level));
+    const color = lvl >= 30 ? '#22c55e' : lvl >= 10 ? '#eab308' : '#ef4444';
+    const circumference = 2 * Math.PI * 50;   // r=50
+    const offset = circumference - (lvl / 100) * circumference;
+
+    document.getElementById('gauge-pct').textContent   = `${Math.round(lvl)}%`;
+    document.getElementById('gauge-fill').style.strokeDashoffset = offset;
+    document.getElementById('gauge-fill').style.stroke           = color;
+    document.getElementById('flow-rate-val').textContent         = Math.round(iv.flow_rate || 0);
+    document.getElementById('time-rem-val').textContent          = Math.round(iv.time_remaining_mins || 0);
+
+    // Chart
+    const labels = Array.from({length:20}, (_,i)=>`-${20-i}s`);
+    const hist   = fluidHistory[p._id] || Array(20).fill(lvl);
+
+    if (!historyChart) {
+        historyChart = new Chart(document.getElementById('history-chart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{ data: hist, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { min: 0, max: 100, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                },
+                animation: { duration: 300 }
+            }
+        });
+    } else {
+        historyChart.data.datasets[0].data = [...hist];
+        historyChart.update('none');
+    }
+}
+
+// ── Action Buttons ────────────────────────────────────
+function updateActionButtons(p) {
+    const isRunning = p.ivStatus && p.ivStatus.is_running;
+    document.getElementById('btn-start').disabled = isRunning;
+    document.getElementById('btn-stop').disabled  = !isRunning;
+}
+
+document.getElementById('btn-start').onclick = () => startMonitoring();
+document.getElementById('btn-stop').onclick  = () => stopMonitoring();
+
+async function startMonitoring() {
+    if (!selectedPatientId) return;
+    try {
+        const res  = await fetch(`${MONITOR_URL}/api/start-monitoring`, {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ patient_id: selectedPatientId })
+        });
+        const data = await res.json();
+        if (!data.success) { alert(data.error); return; }
+        const p = patients.find(x => x._id === selectedPatientId);
+        if (p) { p.ivStatus = data.status; updateActionButtons(p); }
+    } catch (err) {
+        alert('Cannot reach monitoring server. Make sure it is running on port 5000.');
+    }
+}
+
+async function stopMonitoring() {
+    if (!selectedPatientId) return;
+    try {
+        const res  = await fetch(`${MONITOR_URL}/api/stop-monitoring`, {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ patient_id: selectedPatientId })
+        });
+        const data = await res.json();
+        if (!data.success) { alert(data.error); return; }
+        const p = patients.find(x => x._id === selectedPatientId);
+        if (p) { p.ivStatus = data.status; updateActionButtons(p); }
+    } catch (err) {
+        alert('Cannot reach monitoring server.');
+    }
+}
+
+// ── Panel tabs ────────────────────────────────────────
+document.querySelectorAll('.panel-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        currentTab = tab.dataset.tab;
+        document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        if (currentTab === 'alerts') {
+            unreadAlerts = 0;
+            document.getElementById('alert-badge').style.display = 'none';
+            loadAlerts();
+        } else {
+            renderPatientsPanel();
+        }
+    });
+});
+
+// ── Alert render ──────────────────────────────────────
+function prependAlert(alert, append = false) {
+    const panel = document.getElementById('panel-body');
+    const empty = panel.querySelector('.empty-state');
+    if (empty) empty.remove();
+
+    const div  = document.createElement('div');
+    const prio = alert.priority || 'LOW';
+    div.className = `alert-item ${prio}`;
+    const time = new Date(alert.timestamp || alert.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const patName = alert.patient_id?.name || 'Unknown Patient';
+    div.innerHTML = `
+        <div class="alert-top">
+          <span class="alert-type" style="color:${prio==='CRITICAL'?'var(--red)':prio==='HIGH'?'var(--yellow)':prio==='MEDIUM'?'var(--info)':'var(--green)'}">${alert.alert_type||''}</span>
+          <span class="priority-badge p${prio}">${prio}</span>
+        </div>
+        <div class="alert-msg">${alert.message || ''}</div>
+        <div class="alert-time" style="margin-top:0.35rem;">${patName} · ${time}</div>`;
+
+    if (append) panel.appendChild(div);
+    else        panel.insertBefore(div, panel.firstChild);
+}
+
+// ── Patients panel ────────────────────────────────────
+function renderPatientsPanel() {
+    if (currentTab !== 'patients') return;
+    const panel = document.getElementById('panel-body');
+    panel.innerHTML = '';
+    if (!patients.length) {
+        panel.innerHTML = '<div class="empty-state"><div class="icon">🏥</div><p>No patients.</p></div>';
+        return;
+    }
+    patients.forEach(p => {
+        const iv   = p.ivStatus;
+        const lvl  = iv ? Math.round(iv.fluid_level) : 100;
+        const color = lvl >= 30 ? '#22c55e' : lvl >= 10 ? '#eab308' : '#ef4444';
+        const statusClass = iv?.is_running ? (lvl < 10 ? 's-critical' : 's-active') : 's-stopped';
+        const statusLabel = iv?.is_running ? (lvl < 10 ? '🚨 Critical' : '▶ Running') : '⏹ Stopped';
+        const div = document.createElement('div');
+        div.className = 'patient-card';
+        div.innerHTML = `
+            <div class="pc-header">
+                <div>
+                    <div class="pc-name">${p.name}</div>
+                    <div class="pc-room">Room ${p.room_number} · ${p.diagnosis || 'General'}</div>
+                </div>
+                <span class="pc-status ${statusClass}">${statusLabel}</span>
+            </div>
+            <div class="pc-bar"><div class="pc-bar-fill" style="width:${lvl}%;background:${color}"></div></div>
+            <div class="pc-stats">
+                <span>💧 ${lvl}%</span>
+                <span>💨 ${Math.round(iv?.flow_rate||0)} mL/hr</span>
+                <span>⏱ ${Math.round(iv?.time_remaining_mins||0)} min</span>
+            </div>`;
+        panel.appendChild(div);
+    });
+}
+
+// ── Add Patient Modal ─────────────────────────────────
+document.getElementById('open-add-patient').onclick = () => document.getElementById('modal-overlay').classList.add('open');
+document.getElementById('modal-close').onclick       = () => document.getElementById('modal-overlay').classList.remove('open');
+document.getElementById('modal-overlay').onclick = (e) => { if (e.target === document.getElementById('modal-overlay')) document.getElementById('modal-overlay').classList.remove('open'); };
+
+document.getElementById('add-patient-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const body = {
+        name:            document.getElementById('pt-name').value.trim(),
+        room_number:     document.getElementById('pt-room').value.trim(),
+        bed_number:      document.getElementById('pt-bed').value.trim() || 'A',
+        age:             parseInt(document.getElementById('pt-age').value) || undefined,
+        diagnosis:       document.getElementById('pt-diagnosis').value.trim(),
+        assigned_doctor: document.getElementById('pt-doctor').value.trim(),
+    };
+    const fluidVal = parseInt(document.getElementById('pt-fluid').value);
+
+    try {
+        const res  = await fetch(`${MONITOR_URL}/api/patients`, { method:'POST', headers: authHeaders(), body: JSON.stringify(body) });
+        const data = await res.json();
+        if (data.success) {
+            // Auto-start with desired fluid level if specified
+            if (fluidVal && fluidVal !== 100) {
+                await fetch(`${MONITOR_URL}/api/start-monitoring`, {
+                    method: 'POST', headers: authHeaders(),
+                    body: JSON.stringify({ patient_id: data.patient._id, fluid_level: fluidVal })
+                });
+            }
+            document.getElementById('modal-overlay').classList.remove('open');
+            document.getElementById('add-patient-form').reset();
+            await loadPatients();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        alert('Cannot reach monitoring server.');
+    }
+};
+
+// ── Init ──────────────────────────────────────────────
+loadPatients();
+loadAlerts();
+</script>
+</body>
+</html>

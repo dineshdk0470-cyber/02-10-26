@@ -1,0 +1,16 @@
+{
+  "name": "iv-fluid-monitor-backend",
+  "version": "1.0.0",
+  "description": "Node.js WebSocket and MQTT backend for IV fluid monitor dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "simulate": "node server.js --simulate"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mqtt": "^5.3.5",
+    "ws": "^8.16.0"
+  }
+}

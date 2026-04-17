@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IV Monitor — Secure Login</title>
+    <meta name="description" content="Secure login portal for Smart IV Fluid Monitoring System">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --blue:    #3b82f6;
+            --blue-d:  #2563eb;
+            --green:   #22c55e;
+            --red:     #ef4444;
+            --yellow:  #eab308;
+            --bg:      #0f172a;
+            --card:    rgba(255,255,255,0.06);
+            --border:  rgba(255,255,255,0.12);
+            --text:    #f1f5f9;
+            --muted:   #94a3b8;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animated background blobs */
+        body::before, body::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.25;
+            animation: drift 12s ease-in-out infinite alternate;
+        }
+        body::before { width: 500px; height: 500px; background: #3b82f6; top: -100px; left: -100px; }
+        body::after  { width: 400px; height: 400px; background: #8b5cf6; bottom: -100px; right: -50px; animation-delay: 3s; }
+        @keyframes drift { from { transform: translate(0,0); } to { transform: translate(40px, 30px); } }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 440px;
+            padding: 1rem;
+        }
+
+        /* Header branding */
+        .brand {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .brand-icon {
+            width: 60px; height: 60px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 1rem;
+            font-size: 1.8rem;
+            box-shadow: 0 8px 32px rgba(59,130,246,0.4);
+        }
+        .brand h1 { font-size: 1.5rem; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
+        .brand p  { font-size: 0.85rem; color: var(--muted); margin-top: 0.25rem; }
+
+        /* Card */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2.5rem;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 1.75rem;
+            text-align: center;
+        }
+
+        /* Message box */
+        #msg-box {
+            display: none;
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 1.25rem;
+            text-align: center;
+            animation: fadeIn 0.3s ease;
+        }
+        #msg-box.error   { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+        #msg-box.success { background: rgba(34,197,94,0.15);  border: 1px solid rgba(34,197,94,0.3);  color: #86efac; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Form fields */
+        .field { margin-bottom: 1.2rem; }
+        .field label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+        .field input, .field select {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.8rem 1rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .field input:focus, .field select:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+        }
+        .field select option { background: #1e293b; }
+
+        /* Submit button */
+        .btn-primary {
+            width: 100%;
+            padding: 0.875rem;
+            background: linear-gradient(135deg, var(--blue), #6366f1);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.25s;
+            margin-top: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-primary:hover  { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59,130,246,0.4); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        /* Demo / secondary button */
+        .btn-secondary {
+            width: 100%;
+            padding: 0.75rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--muted);
+            font-size: 0.875rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 0.75rem;
+        }
+        .btn-secondary:hover { border-color: rgba(255,255,255,0.3); color: var(--text); background: rgba(255,255,255,0.05); }
+
+        .divider { text-align: center; color: var(--muted); font-size: 0.8rem; margin: 1.25rem 0; position: relative; }
+        .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 42%; height: 1px; background: var(--border); }
+        .divider::before { left: 0; } .divider::after { right: 0; }
+
+        .toggle-link { text-align: center; font-size: 0.875rem; color: var(--muted); margin-top: 1.25rem; }
+        .toggle-link a { color: var(--blue); text-decoration: none; font-weight: 600; }
+        .toggle-link a:hover { text-decoration: underline; }
+
+        /* Credentials hint */
+        .creds-hint {
+            background: rgba(59,130,246,0.08);
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 10px;
+            padding: 0.9rem 1rem;
+            margin-top: 1.25rem;
+            font-size: 0.78rem;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+        .creds-hint strong { color: var(--blue); }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Role badges */
+        .role-badges { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+        .role-badge {
+            padding: 0.2rem 0.7rem;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .role-badge.admin  { background: rgba(239,68,68,0.15); color: #fca5a5; border-color: rgba(239,68,68,0.3); }
+        .role-badge.doctor { background: rgba(59,130,246,0.15); color: #93c5fd; border-color: rgba(59,130,246,0.3); }
+        .role-badge.nurse  { background: rgba(34,197,94,0.15); color: #86efac; border-color: rgba(34,197,94,0.3); }
+        .role-badge:hover  { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+<div class="login-wrapper">
+    <div class="brand">
+        <div class="brand-icon">💉</div>
+        <h1>Smart IV Monitor</h1>
+        <p>Hospital Grade IV Fluid Management System</p>
+    </div>
+
+    <div class="card">
+        <div id="msg-box"></div>
+
+        <!-- LOGIN FORM -->
+        <div id="login-section">
+            <p class="card-title">Sign in to your account</p>
+            <form id="login-form">
+                <div class="field">
+                    <label for="login-email">Email Address</label>
+                    <input type="email" id="login-email" placeholder="name@hospital.com" required autocomplete="email">
+                </div>
+                <div class="field">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-primary" id="login-btn">Sign In</button>
+            </form>
+
+            <div class="divider">or quick access</div>
+            <button class="btn-secondary" id="demo-btn">Continue in Demo Mode</button>
+
+            <div class="creds-hint">
+                <strong>Pre-seeded accounts:</strong><br>
+                🔴 admin@hospital.com / Admin@123<br>
+                🔵 doctor@hospital.com / Doctor@123<br>
+                🟢 nurse@hospital.com / Nurse@123
+                <div class="role-badges" id="quick-fill">
+                    <span class="role-badge admin"  data-email="admin@hospital.com"  data-pass="Admin@123">Admin</span>
+                    <span class="role-badge doctor" data-email="doctor@hospital.com" data-pass="Doctor@123">Doctor</span>
+                    <span class="role-badge nurse"  data-email="nurse@hospital.com"  data-pass="Nurse@123">Nurse</span>
+                </div>
+            </div>
+
+            <div class="toggle-link">Don't have an account? <a href="#" id="go-register">Register</a></div>
+        </div>
+
+        <!-- REGISTER FORM -->
+        <div id="register-section" style="display:none;">
+            <p class="card-title">Create your account</p>
+            <form id="register-form">
+                <div class="field">
+                    <label for="reg-name">Full Name</label>
+                    <input type="text" id="reg-name" placeholder="Dr. / Nurse full name" required>
+                </div>
+                <div class="field">
+                    <label for="reg-email">Email Address</label>
+                    <input type="email" id="reg-email" placeholder="name@hospital.com" required>
+                </div>
+                <div class="field">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" placeholder="Min 6 characters" required minlength="6">
+                </div>
+                <div class="field">
+                    <label for="reg-role">Role</label>
+                    <select id="reg-role">
+                        <option value="nurse">Nurse</option>
+                        <option value="doctor">Doctor</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary" id="reg-btn">Create Account</button>
+            </form>
+            <div class="toggle-link" style="margin-top:1rem;">Already have an account? <a href="#" id="go-login">Sign in</a></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const AUTH_URL = 'http://localhost:4000/api';
+    const msgBox   = document.getElementById('msg-box');
+
+    function showMsg(text, type = 'error') {
+        msgBox.textContent = text;
+        msgBox.className   = type;
+        msgBox.style.display = 'block';
+    }
+    function hideMsg() { msgBox.style.display = 'none'; }
+
+    function setLoading(btnId, loading, text) {
+        const btn = document.getElementById(btnId);
+        btn.disabled = loading;
+        btn.innerHTML = loading ? `<span class="spinner"></span>${text}` : text;
+    }
+
+    // Quick-fill credential badges
+    document.getElementById('quick-fill').addEventListener('click', (e) => {
+        const badge = e.target.closest('.role-badge');
+        if (!badge) return;
+        document.getElementById('login-email').value    = badge.dataset.email;
+        document.getElementById('login-password').value = badge.dataset.pass;
+        hideMsg();
+    });
+
+    // Toggle forms
+    document.getElementById('go-register').addEventListener('click', (e) => {
+        e.preventDefault(); hideMsg();
+        document.getElementById('login-section').style.display    = 'none';
+        document.getElementById('register-section').style.display = 'block';
+    });
+    document.getElementById('go-login').addEventListener('click', (e) => {
+        e.preventDefault(); hideMsg();
+        document.getElementById('register-section').style.display = 'none';
+        document.getElementById('login-section').style.display    = 'block';
+    });
+
+    // Login
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault(); hideMsg();
+        const email    = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        setLoading('login-btn', true, 'Signing in…');
+
+        try {
+            const res  = await fetch(`${AUTH_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                localStorage.setItem('iv_token', data.token);
+                localStorage.setItem('iv_user',  JSON.stringify(data.user));
+                showMsg('✅ Login successful! Redirecting…', 'success');
+                setTimeout(() => window.location.href = 'index.html', 1000);
+            } else {
+                showMsg(data.error || 'Login failed.', 'error');
+                setLoading('login-btn', false, 'Sign In');
+            }
+        } catch (err) {
+            // Offline fallback
+            if (email === 'admin@hospital.com' && password === 'Admin@123') {
+                localStorage.setItem('iv_token', 'offline-demo-token');
+                localStorage.setItem('iv_user', JSON.stringify({ name: 'Admin (Offline)', email, role: 'admin' }));
+                showMsg('⚡ Server offline — using demo mode.', 'success');
+                setTimeout(() => window.location.href = 'index.html', 1200);
+            } else {
+                showMsg('❌ Server offline. Use admin@hospital.com / Admin@123 or Demo Mode.', 'error');
+                setLoading('login-btn', false, 'Sign In');
+            }
+        }
+    });
+
+    // Demo mode
+    document.getElementById('demo-btn').addEventListener('click', () => {
+        localStorage.setItem('iv_token', 'demo-mode');
+        localStorage.setItem('iv_user',  JSON.stringify({ name: 'Demo User', email: 'demo@hospital.com', role: 'admin' }));
+        window.location.href = 'index.html';
+    });
+
+    // Register
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+        e.preventDefault(); hideMsg();
+        const body = {
+            name:     document.getElementById('reg-name').value.trim(),
+            email:    document.getElementById('reg-email').value.trim(),
+            password: document.getElementById('reg-password').value,
+            role:     document.getElementById('reg-role').value
+        };
+        setLoading('reg-btn', true, 'Creating account…');
+
+        try {
+            const res  = await fetch(`${AUTH_URL}/register`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showMsg('✅ Account created! Please sign in.', 'success');
+                setTimeout(() => document.getElementById('go-login').click(), 1500);
+            } else {
+                showMsg(data.error || 'Registration failed.', 'error');
+            }
+        } catch (err) {
+            showMsg('❌ Server offline. Cannot register right now.', 'error');
+        } finally {
+            setLoading('reg-btn', false, 'Create Account');
+        }
+    });
+
+    // If already logged in, go to dashboard
+    if (localStorage.getItem('iv_token')) window.location.href = 'index.html';
+</script>
+</body>
+</html>
