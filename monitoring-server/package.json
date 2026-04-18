@@ -8,13 +8,12 @@
     "dev": "node server.js"
   },
   "dependencies": {
-    "@seald-io/nedb": "^4.1.2",
     "axios": "^1.15.0",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
-    "mongodb-memory-server": "^9.2.0",
-    "mongoose": "^8.3.4",
-    "socket.io": "^4.8.3"
+    "sequelize": "^6.37.5",
+    "socket.io": "^4.8.3",
+    "sqlite3": "^5.1.7"
   }
 }

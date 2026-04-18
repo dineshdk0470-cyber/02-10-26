@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const { Patient, Alert } = require('../config/db');
 
 // Priority matrix
 const ALERT_PRIORITY = {
@@ -21,7 +21,7 @@ const lastAlertState = {};
  */
 const evaluateAlerts = async (status, io) => {
     try {
-        const patient = await db.patients.findOneAsync({ _id: status.patient_id });
+        const patient = await Patient.findByPk(status.patient_id);
         if (!patient) return;
 
         const pid = status.patient_id.toString();
@@ -54,7 +54,7 @@ const evaluateAlerts = async (status, io) => {
                 message: `🚨 CRITICAL: IV bag EMPTY for ${patient.name} in Room ${patient.room_number}. Replace immediately!`
             });
             // Update patient status to critical
-            await db.patients.updateAsync({ _id: status.patient_id }, { $set: { status: 'critical' } });
+            await patient.update({ status: 'critical' });
         }
 
         // ── LOW FLUID ─────────────────────────────────────
@@ -80,22 +80,21 @@ const evaluateAlerts = async (status, io) => {
                 priority: 'LOW',
                 message: `✅ LOW: IV bag replaced — ${patient.name} restored to ${status.fluid_level.toFixed(1)}%.`
             });
-            await db.patients.updateAsync({ _id: status.patient_id }, { $set: { status: 'active' } });
+            await patient.update({ status: 'active' });
         }
 
         // Save and emit each alert
         for (const a of alerts) {
-            const alert = await db.alerts.insertAsync({
+            const alert = await Alert.create({
                 patient_id: status.patient_id,
                 alert_type: a.alert_type,
                 priority: a.priority,
                 message: a.message,
-                fluid_level_at_alert: status.fluid_level,
                 resolved: false,
-                timestamp: new Date()
+                created_at: new Date()
             });
 
-            const populated = { ...alert, patient_id: { name: patient.name, room_number: patient.room_number } };
+            const populated = { ...alert.toJSON(), patient_id: { name: patient.name, room_number: patient.room_number } };
             io.emit('new_alert', populated);
             console.log(`🔔 [Alert] ${a.priority}: ${a.alert_type} → ${patient.name}`);
         }
@@ -117,16 +116,15 @@ const evaluateAlerts = async (status, io) => {
  */
 const fireOperationalAlert = async (patient, alertType, message, io) => {
     try {
-        const alert = await db.alerts.insertAsync({
-            patient_id: patient._id,
+        const alert = await Alert.create({
+            patient_id: patient.id,
             alert_type: alertType,
             priority: ALERT_PRIORITY[alertType] || 'LOW',
             message,
-            fluid_level_at_alert: null,
             resolved: false,
-            timestamp: new Date()
+            created_at: new Date()
         });
-        io.emit('new_alert', alert);
+        io.emit('new_alert', alert.toJSON());
     } catch (err) {
         console.error('❌ [Operational Alert Error]', err.message);
     }

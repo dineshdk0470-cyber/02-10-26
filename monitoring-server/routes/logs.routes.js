@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const { Patient, IVStatus, Alert } = require('../config/db');
 const { verifyToken } = require('../middleware/verifyToken.middleware');
 
 // GET /api/logs — Full IV usage log report
@@ -10,28 +10,29 @@ router.get('/', verifyToken, async (req, res) => {
         const filter = {};
         if (patient_id) filter.patient_id = patient_id;
 
-        // Get all IVStatus history
-        let statuses = await db.ivStatus.findAsync(filter);
-        statuses.sort((a,b) => new Date(b.last_updated) - new Date(a.last_updated));
-        statuses = statuses.slice(0, parseInt(limit));
+        let statuses = await IVStatus.findAll({ 
+            where: filter, 
+            order: [['last_updated', 'DESC']],
+            limit: parseInt(limit)
+        });
 
         const rawLogs = await Promise.all(statuses.map(async (s) => {
-            const p = await db.patients.findOneAsync({ _id: s.patient_id });
-            return { ...s, patient_id: p };
+            const p = await Patient.findByPk(s.patient_id);
+            return { ...s.toJSON(), patient_id: p ? p.toJSON() : null };
         }));
 
         // Aggregate summary per patient
-        const patients = await db.patients.findAsync({});
+        const patients = await Patient.findAll();
         const summary = await Promise.all(patients.map(async (p) => {
-            const iv = await db.ivStatus.findOneAsync({ patient_id: p._id });
-            const allAlerts = await db.alerts.findAsync({ patient_id: p._id });
+            const iv = await IVStatus.findOne({ where: { patient_id: p.id } });
+            const allAlerts = await Alert.findAll({ where: { patient_id: p.id } });
             
             const totalAlerts = allAlerts.length;
             const criticalAlerts = allAlerts.filter(a => a.priority === 'CRITICAL').length;
             const unresolvedAlerts = allAlerts.filter(a => !a.resolved).length;
 
             return {
-                patient: { id: p._id, name: p.name, room: p.room_number, bed: p.bed_number, status: p.status },
+                patient: { id: p.id, name: p.name, room: p.room_number, bed: p.bed_number, status: p.status },
                 ivStatus: iv ? {
                     fluidLevel:    iv.fluid_level,
                     flowRate:      iv.flow_rate,
@@ -58,12 +59,14 @@ router.get('/', verifyToken, async (req, res) => {
 // GET /api/logs/patient/:id — Per-patient log
 router.get('/patient/:id', verifyToken, async (req, res) => {
     try {
-        const patient = await db.patients.findOneAsync({ _id: req.params.id });
+        const patient = await Patient.findByPk(req.params.id);
         if (!patient) return res.status(404).json({ success: false, error: 'Patient not found.' });
 
-        const iv = await db.ivStatus.findOneAsync({ patient_id: req.params.id });
-        const alerts = await db.alerts.findAsync({ patient_id: req.params.id });
-        alerts.sort((a,b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
+        const iv = await IVStatus.findOne({ where: { patient_id: req.params.id } });
+        const alerts = await Alert.findAll({ 
+            where: { patient_id: req.params.id },
+            order: [['created_at', 'DESC']]
+        });
 
         res.json({
             success: true,

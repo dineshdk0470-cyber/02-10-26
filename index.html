@@ -311,7 +311,24 @@
     </div>
 </div>
 
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+
 <script>
+// ── Firebase Config ───────────────────────────────────
+const firebaseConfig = {
+    apiKey: "AIzaSyCf8ZLTU9B6H6z29sV1R3MdJzgfiGPeUgU",
+    authDomain: "ivmoniter.firebaseapp.com",
+    projectId: "ivmoniter",
+    storageBucket: "ivmoniter.firebasestorage.app",
+    messagingSenderId: "531639114185",
+    appId: "1:531639114185:web:8a08d9641791be30073018",
+    measurementId: "G-ZDEDZBFH19"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+
 // ── Config ────────────────────────────────────────────
 const MONITOR_URL = 'http://localhost:5000';
 const AUTH_URL    = 'http://localhost:4000';
@@ -319,8 +336,17 @@ const AUTH_URL    = 'http://localhost:4000';
 // ── Auth Guard ────────────────────────────────────────
 const token = localStorage.getItem('iv_token');
 const userRaw = localStorage.getItem('iv_user');
+// Immediate local check
 if (!token) { window.location.href = 'login.html'; }
 const currentUser = userRaw ? JSON.parse(userRaw) : { name: 'Unknown', role: 'nurse' };
+
+// Firebase State Listener
+auth.onAuthStateChanged(user => {
+    if (!user) {
+        localStorage.clear();
+        window.location.href = 'login.html';
+    }
+});
 
 // ── Auth Headers ──────────────────────────────────────
 const authHeaders = () => ({
@@ -340,9 +366,14 @@ let currentTab       = 'alerts';
 document.getElementById('nav-user-info').innerHTML =
     `${currentUser.name} &nbsp;<span class="nav-role-badge role-${currentUser.role}">${currentUser.role}</span>`;
 
-document.getElementById('logout-btn').onclick = () => {
-    localStorage.clear();
-    window.location.href = 'login.html';
+document.getElementById('logout-btn').onclick = async () => {
+    try {
+        await auth.signOut();
+        localStorage.clear();
+        window.location.href = 'login.html';
+    } catch (err) {
+        console.error('Logout error:', err);
+    }
 };
 
 // ── WebSocket (Socket.IO) ─────────────────────────────
@@ -360,7 +391,7 @@ socket.on('disconnect', () => {
 
 socket.on('sensor_update', (data) => {
     const pid = data.patientId;
-    const p   = patients.find(x => x._id === pid);
+    const p   = patients.find(x => x.id === pid);
     if (!p) return;
 
     // Update local state
@@ -400,7 +431,7 @@ socket.on('new_alert', (alert) => {
 });
 
 socket.on('monitoring_started', (data) => {
-    const p = patients.find(x => x._id === data.patientId);
+    const p = patients.find(x => x.id === data.patientId);
     if (p && p.ivStatus) p.ivStatus.is_running = true;
     renderSidebar();
     if (selectedPatientId === data.patientId) updateActionButtons(p);
@@ -408,7 +439,7 @@ socket.on('monitoring_started', (data) => {
 });
 
 socket.on('monitoring_stopped', (data) => {
-    const p = patients.find(x => x._id === data.patientId);
+    const p = patients.find(x => x.id === data.patientId);
     if (p && p.ivStatus) p.ivStatus.is_running = false;
     renderSidebar();
     if (selectedPatientId === data.patientId) updateActionButtons(p);
@@ -422,10 +453,10 @@ async function loadPatients() {
         const data = await res.json();
         if (data.success) {
             patients = data.patients;
-            patients.forEach(p => { if (!fluidHistory[p._id]) fluidHistory[p._id] = Array(20).fill(p.ivStatus?.fluid_level || 100); });
+            patients.forEach(p => { if (!fluidHistory[p.id]) fluidHistory[p.id] = Array(20).fill(p.ivStatus?.fluid_level || 100); });
             renderSidebar();
             if (currentTab === 'patients') renderPatientsPanel();
-            if (!selectedPatientId && patients.length > 0) selectPatient(patients[0]._id);
+            if (!selectedPatientId && patients.length > 0) selectPatient(patients[0].id);
         }
     } catch (err) {
         console.error('Failed to load patients — server may be offline.');
@@ -465,7 +496,7 @@ function renderSidebar() {
         const isCrit = lvl < 10;
         const isRun  = iv && iv.is_running;
         return `
-        <div class="pt-item ${selectedPatientId===p._id?'active':''} ${isCrit?'critical':''}" onclick="selectPatient('${p._id}')">
+        <div class="pt-item ${selectedPatientId===p.id?'active':''} ${isCrit?'critical':''}" onclick="selectPatient('${p.id}')">
             <div class="pt-dot ${dotC}"></div>
             <div class="pt-info">
                 <div class="pt-name">${p.name}</div>
@@ -481,7 +512,7 @@ function renderSidebar() {
 function selectPatient(id) {
     selectedPatientId = id;
     renderSidebar();
-    const p = patients.find(x => x._id === id);
+    const p = patients.find(x => x.id === id);
     if (!p) return;
     document.getElementById('pt-title').textContent    = p.name;
     document.getElementById('pt-subtitle').textContent = `Room ${p.room_number} · Bed ${p.bed_number || 'A'} · ${p.diagnosis || 'General'}`;
@@ -507,7 +538,7 @@ function updateDashboard(p) {
 
     // Chart
     const labels = Array.from({length:20}, (_,i)=>`-${20-i}s`);
-    const hist   = fluidHistory[p._id] || Array(20).fill(lvl);
+    const hist   = fluidHistory[p.id] || Array(20).fill(lvl);
 
     if (!historyChart) {
         historyChart = new Chart(document.getElementById('history-chart').getContext('2d'), {
@@ -551,7 +582,7 @@ async function startMonitoring() {
         });
         const data = await res.json();
         if (!data.success) { alert(data.error); return; }
-        const p = patients.find(x => x._id === selectedPatientId);
+        const p = patients.find(x => x.id === selectedPatientId);
         if (p) { p.ivStatus = data.status; updateActionButtons(p); }
     } catch (err) {
         alert('Cannot reach monitoring server. Make sure it is running on port 5000.');
@@ -567,7 +598,7 @@ async function stopMonitoring() {
         });
         const data = await res.json();
         if (!data.success) { alert(data.error); return; }
-        const p = patients.find(x => x._id === selectedPatientId);
+        const p = patients.find(x => x.id === selectedPatientId);
         if (p) { p.ivStatus = data.status; updateActionButtons(p); }
     } catch (err) {
         alert('Cannot reach monitoring server.');
@@ -673,7 +704,7 @@ document.getElementById('add-patient-form').onsubmit = async (e) => {
             if (fluidVal && fluidVal !== 100) {
                 await fetch(`${MONITOR_URL}/api/start-monitoring`, {
                     method: 'POST', headers: authHeaders(),
-                    body: JSON.stringify({ patient_id: data.patient._id, fluid_level: fluidVal })
+                    body: JSON.stringify({ patient_id: data.patient.id, fluid_level: fluidVal })
                 });
             }
             document.getElementById('modal-overlay').classList.remove('open');

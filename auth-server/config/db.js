@@ -1,14 +1,26 @@
-const Datastore = require('@seald-io/nedb');
+const { Sequelize, DataTypes } = require('sequelize');
 const path = require('path');
 
-// In-memory datastores (no file persistence needed — pure in-memory)
-const db = {
-    users: new Datastore({ inMemoryOnly: true })
-};
+const sequelize = new Sequelize({
+    dialect: 'sqlite',
+    storage: path.join(__dirname, '../../hospital.sqlite'),
+    logging: false
+});
 
-// Create indexes
-db.users.ensureIndex({ fieldName: 'email', unique: true });
+const User = sequelize.define('User', {
+    name: { type: DataTypes.STRING, allowNull: false },
+    email: { type: DataTypes.STRING, allowNull: false, unique: true },
+    password: { type: DataTypes.STRING, allowNull: false },
+    role: { type: DataTypes.STRING, defaultValue: 'nurse' },
+    isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+    lastLogin: { type: DataTypes.DATE }
+}, {
+    tableName: 'users',
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: false
+});
 
-console.log('✅ [Auth-DB] NeDB in-memory datastore initialized');
+console.log('✅ [Auth-DB] Sequelize + SQLite configured');
 
-module.exports = db;
+module.exports = { sequelize, User };

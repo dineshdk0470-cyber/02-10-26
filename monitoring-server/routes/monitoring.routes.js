@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const { Patient, IVStatus } = require('../config/db');
 const { verifyToken, requireRole } = require('../middleware/verifyToken.middleware');
 const { startSimulation, stopSimulation, getActiveSimulations } = require('../services/sensorSimulator');
 const { fireOperationalAlert } = require('../services/alertEngine');
@@ -15,12 +15,12 @@ router.post('/start-monitoring', verifyToken, requireRole('doctor', 'nurse', 'ad
         const { patient_id, fluid_level, flow_rate, bottle_volume_ml } = req.body;
         if (!patient_id) return res.status(400).json({ success: false, error: 'patient_id is required.' });
 
-        const patient = await db.patients.findOneAsync({ _id: patient_id });
+        const patient = await Patient.findByPk(patient_id);
         if (!patient) return res.status(404).json({ success: false, error: 'Patient not found.' });
 
-        let status = await db.ivStatus.findOneAsync({ patient_id });
+        let status = await IVStatus.findOne({ where: { patient_id } });
         if (!status) {
-            status = await db.ivStatus.insertAsync({ patient_id });
+            status = await IVStatus.create({ patient_id });
         }
 
         if (status.is_running) {
@@ -40,8 +40,7 @@ router.post('/start-monitoring', verifyToken, requireRole('doctor', 'nurse', 'ad
             last_updated: new Date()
         };
 
-        await db.ivStatus.updateAsync({ _id: status._id }, { $set: update });
-        const updatedStatus = await db.ivStatus.findOneAsync({ _id: status._id });
+        await status.update(update);
 
         startSimulation(patient_id, ioRef);
 
@@ -55,7 +54,7 @@ router.post('/start-monitoring', verifyToken, requireRole('doctor', 'nurse', 'ad
         ioRef.emit('monitoring_started', { patientId: patient_id, patient: patient.name });
         console.log(`▶️  [Monitor] Started for ${patient.name}`);
 
-        res.json({ success: true, message: `Monitoring started for ${patient.name}.`, status: updatedStatus });
+        res.json({ success: true, message: `Monitoring started for ${patient.name}.`, status: status.toJSON() });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -67,16 +66,15 @@ router.post('/stop-monitoring', verifyToken, requireRole('doctor', 'nurse', 'adm
         const { patient_id } = req.body;
         if (!patient_id) return res.status(400).json({ success: false, error: 'patient_id is required.' });
 
-        const patient = await db.patients.findOneAsync({ _id: patient_id });
+        const patient = await Patient.findByPk(patient_id);
         if (!patient) return res.status(404).json({ success: false, error: 'Patient not found.' });
 
-        const status = await db.ivStatus.findOneAsync({ patient_id });
+        const status = await IVStatus.findOne({ where: { patient_id } });
         if (!status || !status.is_running) {
             return res.status(409).json({ success: false, error: 'Monitoring is not running for this patient.' });
         }
 
-        await db.ivStatus.updateAsync({ _id: status._id }, { $set: { is_running: false, stopped_at: new Date(), last_updated: new Date() } });
-        const updatedStatus = await db.ivStatus.findOneAsync({ _id: status._id });
+        await status.update({ is_running: false, stopped_at: new Date(), last_updated: new Date() });
 
         stopSimulation(patient_id);
 
@@ -90,7 +88,7 @@ router.post('/stop-monitoring', verifyToken, requireRole('doctor', 'nurse', 'adm
         ioRef.emit('monitoring_stopped', { patientId: patient_id, patient: patient.name });
         console.log(`⏹️  [Monitor] Stopped for ${patient.name}`);
 
-        res.json({ success: true, message: `Monitoring stopped for ${patient.name}.`, status: updatedStatus });
+        res.json({ success: true, message: `Monitoring stopped for ${patient.name}.`, status: status.toJSON() });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -100,11 +98,11 @@ router.post('/stop-monitoring', verifyToken, requireRole('doctor', 'nurse', 'adm
 router.get('/active-monitoring', verifyToken, async (req, res) => {
     try {
         const activeIds = getActiveSimulations();
-        const statuses = await db.ivStatus.findAsync({ patient_id: { $in: activeIds }, is_running: true });
+        const statuses = await IVStatus.findAll({ where: { patient_id: activeIds, is_running: true } });
         
         const result = await Promise.all(statuses.map(async (s) => {
-            const p = await db.patients.findOneAsync({ _id: s.patient_id });
-            return { ...s, patient_id: p }; // Mimic Mongoose populate
+            const p = await Patient.findByPk(s.patient_id);
+            return { ...s.toJSON(), patient_id: p ? p.toJSON() : null }; // Mimic Mongoose populate
         }));
 
         res.json({ success: true, count: result.length, active: result });

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const { Patient, Alert } = require('../config/db');
 const { verifyToken, requireRole } = require('../middleware/verifyToken.middleware');
 
 // GET /api/alerts — Get all alerts (filterable)
@@ -13,15 +13,15 @@ router.get('/', verifyToken, async (req, res) => {
         if (alert_type)  filter.alert_type  = alert_type;
         if (resolved !== undefined) filter.resolved = resolved === 'true';
 
-        let alerts = await db.alerts.findAsync(filter);
-        
-        // Manual sort and limit
-        alerts.sort((a,b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
-        alerts = alerts.slice(0, parseInt(limit));
+        let alerts = await Alert.findAll({ 
+            where: filter, 
+            order: [['created_at', 'DESC']], 
+            limit: parseInt(limit) 
+        });
 
         const result = await Promise.all(alerts.map(async (a) => {
-            const p = await db.patients.findOneAsync({ _id: a.patient_id });
-            return { ...a, patient_id: p }; // Mimic Mongoose populate
+            const p = await Patient.findByPk(a.patient_id);
+            return { ...a.toJSON(), patient_id: p ? p.toJSON() : null }; // Mimic Mongoose populate
         }));
 
         res.json({ success: true, count: result.length, alerts: result });
@@ -33,12 +33,14 @@ router.get('/', verifyToken, async (req, res) => {
 // GET /api/alerts/critical — Only unresolved critical alerts
 router.get('/critical', verifyToken, async (req, res) => {
     try {
-        let alerts = await db.alerts.findAsync({ priority: 'CRITICAL', resolved: false });
-        alerts.sort((a,b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
+        let alerts = await Alert.findAll({ 
+            where: { priority: 'CRITICAL', resolved: false },
+            order: [['created_at', 'DESC']]
+        });
 
         const result = await Promise.all(alerts.map(async (a) => {
-            const p = await db.patients.findOneAsync({ _id: a.patient_id });
-            return { ...a, patient_id: p };
+            const p = await Patient.findByPk(a.patient_id);
+            return { ...a.toJSON(), patient_id: p ? p.toJSON() : null };
         }));
 
         res.json({ success: true, count: result.length, alerts: result });
@@ -50,13 +52,12 @@ router.get('/critical', verifyToken, async (req, res) => {
 // PATCH /api/alerts/:id/resolve — Mark alert as resolved
 router.patch('/:id/resolve', verifyToken, requireRole('doctor', 'nurse', 'admin'), async (req, res) => {
     try {
-        const n = await db.alerts.updateAsync(
-            { _id: req.params.id },
-            { $set: { resolved: true, resolved_at: new Date(), acknowledged_by: req.user.name } },
-            {}
+        await Alert.update(
+            { resolved: true, resolved_at: new Date(), acknowledged_by: req.user.name },
+            { where: { id: req.params.id } }
         );
-        if (!n) return res.status(404).json({ success: false, error: 'Alert not found.' });
-        const alert = await db.alerts.findOneAsync({ _id: req.params.id });
+        const alert = await Alert.findByPk(req.params.id);
+        if (!alert) return res.status(404).json({ success: false, error: 'Alert not found.' });
         res.json({ success: true, message: 'Alert resolved.', alert });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -66,7 +67,7 @@ router.patch('/:id/resolve', verifyToken, requireRole('doctor', 'nurse', 'admin'
 // DELETE /api/alerts — Clear all resolved alerts (admin only)
 router.delete('/clear', verifyToken, requireRole('admin'), async (req, res) => {
     try {
-        const result = await db.alerts.removeAsync({ resolved: true }, { multi: true });
+        const result = await Alert.destroy({ where: { resolved: true } });
         res.json({ success: true, message: `Cleared ${result} resolved alerts.` });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

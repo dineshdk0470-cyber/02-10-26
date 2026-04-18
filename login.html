@@ -148,25 +148,7 @@
         .btn-primary:active { transform: translateY(0); }
         .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
-        /* Demo / secondary button */
-        .btn-secondary {
-            width: 100%;
-            padding: 0.75rem;
-            background: transparent;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            color: var(--muted);
-            font-size: 0.875rem;
-            font-family: inherit;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 0.75rem;
-        }
-        .btn-secondary:hover { border-color: rgba(255,255,255,0.3); color: var(--text); background: rgba(255,255,255,0.05); }
 
-        .divider { text-align: center; color: var(--muted); font-size: 0.8rem; margin: 1.25rem 0; position: relative; }
-        .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 42%; height: 1px; background: var(--border); }
-        .divider::before { left: 0; } .divider::after { right: 0; }
 
         .toggle-link { text-align: center; font-size: 0.875rem; color: var(--muted); margin-top: 1.25rem; }
         .toggle-link a { color: var(--blue); text-decoration: none; font-weight: 600; }
@@ -242,8 +224,7 @@
                 <button type="submit" class="btn-primary" id="login-btn">Sign In</button>
             </form>
 
-            <div class="divider">or quick access</div>
-            <button class="btn-secondary" id="demo-btn">Continue in Demo Mode</button>
+
 
             <div class="creds-hint">
                 <strong>Pre-seeded accounts:</strong><br>
@@ -291,120 +272,127 @@
     </div>
 </div>
 
-<script>
-    const AUTH_URL = 'http://localhost:4000/api';
-    const msgBox   = document.getElementById('msg-box');
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-analytics-compat.js"></script>
 
-    function showMsg(text, type = 'error') {
-        msgBox.textContent = text;
-        msgBox.className   = type;
-        msgBox.style.display = 'block';
-    }
-    function hideMsg() { msgBox.style.display = 'none'; }
+    <script>
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCf8ZLTU9B6H6z29sV1R3MdJzgfiGPeUgU",
+            authDomain: "ivmoniter.firebaseapp.com",
+            projectId: "ivmoniter",
+            storageBucket: "ivmoniter.firebasestorage.app",
+            messagingSenderId: "531639114185",
+            appId: "1:531639114185:web:8a08d9641791be30073018",
+            measurementId: "G-ZDEDZBFH19"
+        };
 
-    function setLoading(btnId, loading, text) {
-        const btn = document.getElementById(btnId);
-        btn.disabled = loading;
-        btn.innerHTML = loading ? `<span class="spinner"></span>${text}` : text;
-    }
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const analytics = firebase.analytics();
 
-    // Quick-fill credential badges
-    document.getElementById('quick-fill').addEventListener('click', (e) => {
-        const badge = e.target.closest('.role-badge');
-        if (!badge) return;
-        document.getElementById('login-email').value    = badge.dataset.email;
-        document.getElementById('login-password').value = badge.dataset.pass;
-        hideMsg();
-    });
+        const msgBox = document.getElementById('msg-box');
 
-    // Toggle forms
-    document.getElementById('go-register').addEventListener('click', (e) => {
-        e.preventDefault(); hideMsg();
-        document.getElementById('login-section').style.display    = 'none';
-        document.getElementById('register-section').style.display = 'block';
-    });
-    document.getElementById('go-login').addEventListener('click', (e) => {
-        e.preventDefault(); hideMsg();
-        document.getElementById('register-section').style.display = 'none';
-        document.getElementById('login-section').style.display    = 'block';
-    });
+        function showMsg(text, type = 'error') {
+            msgBox.textContent = text;
+            msgBox.className = type;
+            msgBox.style.display = 'block';
+        }
+        function hideMsg() { msgBox.style.display = 'none'; }
 
-    // Login
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-        e.preventDefault(); hideMsg();
-        const email    = document.getElementById('login-email').value.trim();
-        const password = document.getElementById('login-password').value;
-        setLoading('login-btn', true, 'Signing in…');
+        function setLoading(btnId, loading, text) {
+            const btn = document.getElementById(btnId);
+            btn.disabled = loading;
+            btn.innerHTML = loading ? `<span class="spinner"></span>${text}` : text;
+        }
 
-        try {
-            const res  = await fetch(`${AUTH_URL}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-            const data = await res.json();
+        // Quick-fill credential badges
+        document.getElementById('quick-fill').addEventListener('click', (e) => {
+            const badge = e.target.closest('.role-badge');
+            if (!badge) return;
+            document.getElementById('login-email').value = badge.dataset.email;
+            document.getElementById('login-password').value = badge.dataset.pass;
+            hideMsg();
+        });
 
-            if (res.ok && data.success) {
-                localStorage.setItem('iv_token', data.token);
-                localStorage.setItem('iv_user',  JSON.stringify(data.user));
+        // Toggle forms
+        document.getElementById('go-register').addEventListener('click', (e) => {
+            e.preventDefault(); hideMsg();
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('register-section').style.display = 'block';
+        });
+        document.getElementById('go-login').addEventListener('click', (e) => {
+            e.preventDefault(); hideMsg();
+            document.getElementById('register-section').style.display = 'none';
+            document.getElementById('login-section').style.display = 'block';
+        });
+
+        // Login
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault(); hideMsg();
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            setLoading('login-btn', true, 'Signing in…');
+
+            try {
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                
+                // Get ID token for backend
+                const token = await user.getIdToken();
+                
+                localStorage.setItem('iv_token', token);
+                localStorage.setItem('iv_user', JSON.stringify({ 
+                    name: user.displayName || user.email.split('@')[0], 
+                    email: user.email, 
+                    role: 'admin' 
+                }));
+
                 showMsg('✅ Login successful! Redirecting…', 'success');
                 setTimeout(() => window.location.href = 'index.html', 1000);
-            } else {
-                showMsg(data.error || 'Login failed.', 'error');
+            } catch (err) {
+                console.error('Login error:', err);
+                showMsg(err.message || 'Login failed.', 'error');
                 setLoading('login-btn', false, 'Sign In');
             }
-        } catch (err) {
-            // Offline fallback
-            if (email === 'admin@hospital.com' && password === 'Admin@123') {
-                localStorage.setItem('iv_token', 'offline-demo-token');
-                localStorage.setItem('iv_user', JSON.stringify({ name: 'Admin (Offline)', email, role: 'admin' }));
-                showMsg('⚡ Server offline — using demo mode.', 'success');
-                setTimeout(() => window.location.href = 'index.html', 1200);
-            } else {
-                showMsg('❌ Server offline. Use admin@hospital.com / Admin@123 or Demo Mode.', 'error');
-                setLoading('login-btn', false, 'Sign In');
-            }
-        }
-    });
+        });
 
-    // Demo mode
-    document.getElementById('demo-btn').addEventListener('click', () => {
-        localStorage.setItem('iv_token', 'demo-mode');
-        localStorage.setItem('iv_user',  JSON.stringify({ name: 'Demo User', email: 'demo@hospital.com', role: 'admin' }));
-        window.location.href = 'index.html';
-    });
+        // Register
+        document.getElementById('register-form').addEventListener('submit', async (e) => {
+            e.preventDefault(); hideMsg();
+            const name = document.getElementById('reg-name').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const role = document.getElementById('reg-role').value;
 
-    // Register
-    document.getElementById('register-form').addEventListener('submit', async (e) => {
-        e.preventDefault(); hideMsg();
-        const body = {
-            name:     document.getElementById('reg-name').value.trim(),
-            email:    document.getElementById('reg-email').value.trim(),
-            password: document.getElementById('reg-password').value,
-            role:     document.getElementById('reg-role').value
-        };
-        setLoading('reg-btn', true, 'Creating account…');
+            setLoading('reg-btn', true, 'Creating account…');
 
-        try {
-            const res  = await fetch(`${AUTH_URL}/register`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
+            try {
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                
+                // Update display name
+                await user.updateProfile({ displayName: name });
+                
                 showMsg('✅ Account created! Please sign in.', 'success');
                 setTimeout(() => document.getElementById('go-login').click(), 1500);
-            } else {
-                showMsg(data.error || 'Registration failed.', 'error');
+            } catch (err) {
+                console.error('Registration error:', err);
+                showMsg(err.message || 'Registration failed.', 'error');
+            } finally {
+                setLoading('reg-btn', false, 'Create Account');
             }
-        } catch (err) {
-            showMsg('❌ Server offline. Cannot register right now.', 'error');
-        } finally {
-            setLoading('reg-btn', false, 'Create Account');
-        }
-    });
+        });
 
-    // If already logged in, go to dashboard
-    if (localStorage.getItem('iv_token')) window.location.href = 'index.html';
-</script>
+        // Check auth status
+        auth.onAuthStateChanged(user => {
+            if (user && localStorage.getItem('iv_token')) {
+                window.location.href = 'index.html';
+            }
+        });
+    </script>
 </body>
 </html>

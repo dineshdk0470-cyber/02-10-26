@@ -3,7 +3,7 @@ const express    = require('express');
 const http       = require('http');
 const { Server } = require('socket.io');
 const cors       = require('cors');
-const db         = require('./config/db');
+const { sequelize, Patient, IVStatus } = require('./config/db');
 const patientRoutes    = require('./routes/patients.routes');
 const { router: monitoringRouter, setIO } = require('./routes/monitoring.routes');
 const alertRoutes      = require('./routes/alerts.routes');
@@ -59,13 +59,13 @@ io.on('connection', (socket) => {
     console.log(`🔌 [Socket.IO] Client connected: ${socket.id}`);
 
     // Send current state of all patients on connect
-    db.ivStatus.findAsync({ is_running: true })
+    IVStatus.findAll({ where: { is_running: true } })
         .then(async (statuses) => {
             for (const s of statuses) {
-                const p = await db.patients.findOneAsync({ _id: s.patient_id });
+                const p = await Patient.findByPk(s.patient_id);
                 if (p) {
                     socket.emit('sensor_update', {
-                        patientId:     p._id,
+                        patientId:     p.id,
                         fluidLevel:    s.fluid_level,
                         flowRate:      s.flow_rate,
                         timeRemaining: s.time_remaining_mins,
@@ -85,7 +85,7 @@ io.on('connection', (socket) => {
 // ── Seed Sample Patients ──────────────────────
 const seedPatients = async () => {
     try {
-        const count = await db.patients.countAsync({});
+        const count = await Patient.count();
         if (count > 0) return;
 
         const samples = [
@@ -95,15 +95,14 @@ const seedPatients = async () => {
         ];
 
         for (const s of samples) {
-            const p = await db.patients.insertAsync(s);
-            await db.ivStatus.insertAsync({
-                patient_id:   p._id,
+            const p = await Patient.create(s);
+            await IVStatus.create({
+                patient_id:   p.id,
                 fluid_level:  Math.floor(Math.random() * 60) + 30,  // 30–90%
                 flow_rate:    Math.floor(Math.random() * 40) + 30,   // 30–70 mL/hr
                 is_running:   false,
                 is_connected: true,
-                leakage_detected: false,
-                last_updated: new Date()
+                leakage_detected: false
             });
         }
 
@@ -115,6 +114,8 @@ const seedPatients = async () => {
 
 // ── Start Server ──────────────────────────────
 const start = async () => {
+    // Ensure SQLite tables exist before seeding
+    await sequelize.sync();
     await seedPatients();
 
     server.listen(PORT, () => {

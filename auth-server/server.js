@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./config/db');
+const { sequelize, User } = require('./config/db');
 const authRoutes = require('./routes/auth.routes');
 const bcrypt = require('bcryptjs');
 
@@ -10,8 +10,8 @@ const PORT = process.env.AUTH_PORT || 4000;
 
 // ── Middleware ────────────────────────────────
 app.use(cors({
-    origin: ['http://localhost:5000', 'http://127.0.0.1:5500', '*'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
@@ -45,44 +45,41 @@ app.use((err, req, res, next) => {
 // ── Seed Default Admin ────────────────────────
 const seedAdmin = async () => {
     try {
-        const existing = await db.users.findOneAsync({ email: 'admin@hospital.com' });
+        const existing = await User.findOne({ where: { email: 'admin@hospital.com' } });
         if (!existing) {
             const hash = await bcrypt.hash('Admin@123', 10);
-            await db.users.insertAsync({
+            await User.create({
                 name: 'System Administrator',
                 email: 'admin@hospital.com',
                 password: hash,
                 role: 'admin',
-                isActive: true,
-                created_at: new Date()
+                isActive: true
             });
             console.log('🌱 [Auth] Seeded default admin → admin@hospital.com / Admin@123');
         }
 
-        const doctorExists = await db.users.findOneAsync({ email: 'doctor@hospital.com' });
+        const doctorExists = await User.findOne({ where: { email: 'doctor@hospital.com' } });
         if (!doctorExists) {
             const hash = await bcrypt.hash('Doctor@123', 10);
-            await db.users.insertAsync({
+            await User.create({
                 name: 'Dr. Priya Sharma',
                 email: 'doctor@hospital.com',
                 password: hash,
                 role: 'doctor',
-                isActive: true,
-                created_at: new Date()
+                isActive: true
             });
             console.log('🌱 [Auth] Seeded doctor → doctor@hospital.com / Doctor@123');
         }
 
-        const nurseExists = await db.users.findOneAsync({ email: 'nurse@hospital.com' });
+        const nurseExists = await User.findOne({ where: { email: 'nurse@hospital.com' } });
         if (!nurseExists) {
             const hash = await bcrypt.hash('Nurse@123', 10);
-            await db.users.insertAsync({
+            await User.create({
                 name: 'Nurse Aisha',
                 email: 'nurse@hospital.com',
                 password: hash,
                 role: 'nurse',
-                isActive: true,
-                created_at: new Date()
+                isActive: true
             });
             console.log('🌱 [Auth] Seeded nurse → nurse@hospital.com / Nurse@123');
         }
@@ -93,6 +90,8 @@ const seedAdmin = async () => {
 
 // ── Start Server ──────────────────────────────
 const start = async () => {
+    // Ensure SQLite tables exist before seeding
+    await sequelize.sync();
     await seedAdmin();
     app.listen(PORT, () => {
         console.log('');

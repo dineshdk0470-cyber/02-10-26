@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const { IVStatus } = require('../config/db');
 const { evaluateAlerts } = require('./alertEngine');
 
 // Active simulation intervals keyed by patient_id string
@@ -25,7 +25,7 @@ const startSimulation = (patientId, io) => {
 
     const interval = setInterval(async () => {
         try {
-            const status = await db.ivStatus.findOneAsync({ patient_id: patientId });
+            const status = await IVStatus.findOne({ where: { patient_id: patientId } });
             if (!status || !status.is_running) {
                 stopSimulation(patientId);
                 return;
@@ -65,8 +65,8 @@ const startSimulation = (patientId, io) => {
                 last_updated: new Date()
             };
 
-            await db.ivStatus.updateAsync({ _id: status._id }, { $set: update });
-            const updatedStatus = await db.ivStatus.findOneAsync({ _id: status._id });
+            await status.update(update);
+            const updatedStatus = status;
 
             // ── Build broadcast payload ───────────────────
             const payload = {
@@ -88,14 +88,14 @@ const startSimulation = (patientId, io) => {
             // ── Auto-reconnect simulation ─────────────────
             if (disconnectEvent) {
                 setTimeout(async () => {
-                    await db.ivStatus.updateAsync({ patient_id: patientId }, { $set: { is_connected: true } });
+                    await IVStatus.update({ is_connected: true }, { where: { patient_id: patientId } });
                 }, 3000);
             }
 
             // ── Auto-stop if bottle empty ─────────────────
             if (newLevel <= 0) {
                 console.log(`🛑 [Simulator] Bottle EMPTY for patient ${patientId}`);
-                await db.ivStatus.updateAsync({ _id: status._id }, { $set: { is_running: false } });
+                await status.update({ is_running: false });
                 io.emit('monitoring_stopped', { patientId, reason: 'EMPTY' });
                 stopSimulation(patientId);
             }
